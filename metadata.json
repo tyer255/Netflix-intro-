@@ -1,0 +1,6 @@
+{
+  "name": "Chromatic Ribbon & Light Streak Animation",
+  "description": "Frame-accurate procedural 3D geometric ribbon and multicolored volumetric light streak animation engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
