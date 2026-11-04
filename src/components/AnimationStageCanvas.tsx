@@ -6,6 +6,8 @@ import {
   LOOP_PAUSE_SECONDS,
 } from '../animation/timeline';
 
+const INTRO_AUDIO_SRC = '/assets/aistudio/intro-sound.mp3';
+
 declare global {
   interface Window {
     __seekFrame?: (frame: number) => void;
@@ -24,6 +26,11 @@ export function AnimationStageCanvas() {
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
 
+    // Preload the exact reference audio track for frame-accurate sync
+    const audio = new Audio(INTRO_AUDIO_SRC);
+    audio.preload = 'auto';
+    audio.volume = 1.0;
+
     const params = new URLSearchParams(window.location.search);
     const frameParam = params.get('frame');
     const timeParam = params.get('t');
@@ -37,10 +44,30 @@ export function AnimationStageCanvas() {
 
     let startTimestamp = performance.now();
     let rafId = 0;
+    let timerId = 0;
     let lastStage = '';
     let lastIntFrame = -1;
+    let lastCycleIndex = -1;
+    let audioUnlocked = false;
 
-    let timerId = 0;
+    const triggerAudioFromStart = () => {
+      if (lockedTime !== null) return;
+      try {
+        audio.currentTime = 0;
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              audioUnlocked = true;
+            })
+            .catch(() => {
+              // Autoplay blocked until first user gesture; global listener will unlock
+            });
+        }
+      } catch {
+        // Ignore audio errors in headless environments
+      }
+    };
 
     const syncCanvasSize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
@@ -87,16 +114,45 @@ export function AnimationStageCanvas() {
 
       const cycleDuration = ANIMATION_DURATION + LOOP_PAUSE_SECONDS;
       const elapsedSeconds = (now - startTimestamp) / 1000;
+      const currentCycleIndex = Math.floor(elapsedSeconds / cycleDuration);
       const cycleTime = elapsedSeconds % cycleDuration;
-      const animTime = Math.min(cycleTime, ANIMATION_DURATION);
+
+      // Trigger synchronized audio at the exact start (t=0.000s) of each animation cycle
+      if (currentCycleIndex !== lastCycleIndex) {
+        lastCycleIndex = currentCycleIndex;
+        triggerAudioFromStart();
+      }
+
+      // If audio is actively playing, lock visual timeline to audio.currentTime for exact audio-visual sync
+      let animTime = Math.min(cycleTime, ANIMATION_DURATION);
+      if (
+        audioUnlocked &&
+        !audio.paused &&
+        !audio.ended &&
+        audio.currentTime > 0 &&
+        cycleTime < ANIMATION_DURATION
+      ) {
+        animTime = Math.min(audio.currentTime, ANIMATION_DURATION);
+      }
 
       drawAtTime(animTime);
       scheduleNext();
     };
 
+    const restartWithSound = () => {
+      window.clearTimeout(timerId);
+      window.cancelAnimationFrame(rafId);
+      lockedTime = null;
+      startTimestamp = performance.now();
+      lastCycleIndex = 0;
+      triggerAudioFromStart();
+      rafId = window.requestAnimationFrame(tick);
+    };
+
     window.__seekFrame = (frame: number) => {
       window.clearTimeout(timerId);
       window.cancelAnimationFrame(rafId);
+      audio.pause();
       lockedTime = frame / ANIMATION_FPS;
       drawAtTime(lockedTime);
     };
@@ -104,30 +160,25 @@ export function AnimationStageCanvas() {
     window.__seekTime = (seconds: number) => {
       window.clearTimeout(timerId);
       window.cancelAnimationFrame(rafId);
+      audio.pause();
       lockedTime = seconds;
       drawAtTime(lockedTime);
     };
 
     window.__resumePlayback = () => {
-      window.clearTimeout(timerId);
-      window.cancelAnimationFrame(rafId);
-      lockedTime = null;
-      startTimestamp = performance.now();
-      rafId = window.requestAnimationFrame(tick);
+      restartWithSound();
     };
 
-    const handleRestart = () => {
+    const handleUserGesture = () => {
       if (lockedTime !== null) return;
-      startTimestamp = performance.now();
+      restartWithSound();
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.key === 'r' || e.key === 'R') {
-        lockedTime = null;
-        startTimestamp = performance.now();
-        window.clearTimeout(timerId);
-        window.cancelAnimationFrame(rafId);
-        rafId = window.requestAnimationFrame(tick);
+        restartWithSound();
+      } else if (!audioUnlocked && lockedTime === null) {
+        restartWithSound();
       }
     };
 
@@ -140,7 +191,7 @@ export function AnimationStageCanvas() {
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('keydown', handleKeyDown);
-    canvas.addEventListener('pointerdown', handleRestart);
+    window.addEventListener('pointerdown', handleUserGesture);
 
     syncCanvasSize();
     if (lockedTime !== null) {
@@ -152,9 +203,11 @@ export function AnimationStageCanvas() {
     return () => {
       window.clearTimeout(timerId);
       window.cancelAnimationFrame(rafId);
+      audio.pause();
+      audio.src = '';
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
-      canvas.removeEventListener('pointerdown', handleRestart);
+      window.removeEventListener('pointerdown', handleUserGesture);
     };
   }, []);
 
