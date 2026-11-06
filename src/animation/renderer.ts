@@ -9,39 +9,36 @@ import {
   clamp,
   evaluateTimeline,
   lerp,
-  smoothstep,
   TimelineState,
 } from './timeline';
 
 const REF_W = 1920;
 const REF_H = 1080;
 const CENTER_X = 960;
-const CENTER_Y = 540;
 
-// Exact emblem coordinates in 1920x1080 space
-const EMBLEM_LEFT = 856;
-const EMBLEM_RIGHT = 1062;
-const EMBLEM_TOP = 352;
-const EMBLEM_BOT = 726;
-const STEM_W = 72; // 856..928 and 990..1062
+// Z emblem coordinate system from netflix_z_intro_038aed5e.html (viewBox 380x300, center at 190,150)
+const Z_CENTER_X = 190;
+const Z_CENTER_Y = 150;
+// Base scale mapping 220px Z height (y=40..260) to 374px in 1920x1080 space
+const Z_BASE_SCALE = 374 / 220; // 1.70
 
-// High-definition vector streak layout inside the emblem (for ultra-crisp Stage 3 zoom!)
+// High-definition vector streak layout inside the Z / vertical pipe (for ultra-crisp Stage 3 zoom!)
 const INTERNAL_RIBBON_STREAKS = [
-  { frac: 0.03, w: 2.2, r: 165, g: 0, b: 0 },
-  { frac: 0.09, w: 3.0, r: 245, g: 18, b: 4 },
-  { frac: 0.16, w: 1.8, r: 95, g: 0, b: 0 },
-  { frac: 0.22, w: 3.6, r: 252, g: 58, b: 8 },
-  { frac: 0.29, w: 2.0, r: 150, g: 0, b: 0 },
-  { frac: 0.35, w: 2.8, r: 240, g: 12, b: 2 },
-  { frac: 0.42, w: 3.4, r: 255, g: 118, b: 16 },
-  { frac: 0.49, w: 1.8, r: 85, g: 0, b: 0 },
-  { frac: 0.55, w: 3.8, r: 248, g: 28, b: 4 },
-  { frac: 0.63, w: 2.2, r: 195, g: 4, b: 2 },
-  { frac: 0.70, w: 3.2, r: 252, g: 75, b: 10 },
-  { frac: 0.77, w: 2.0, r: 130, g: 0, b: 0 },
-  { frac: 0.84, w: 3.4, r: 244, g: 14, b: 4 },
-  { frac: 0.91, w: 2.4, r: 215, g: 38, b: 6 },
-  { frac: 0.96, w: 1.8, r: 170, g: 0, b: 0 },
+  { frac: 0.04, w: 1.3, r: 165, g: 0, b: 0 },
+  { frac: 0.10, w: 1.8, r: 245, g: 18, b: 4 },
+  { frac: 0.17, w: 1.1, r: 95, g: 0, b: 0 },
+  { frac: 0.23, w: 2.1, r: 252, g: 58, b: 8 },
+  { frac: 0.30, w: 1.2, r: 150, g: 0, b: 0 },
+  { frac: 0.36, w: 1.7, r: 240, g: 12, b: 2 },
+  { frac: 0.43, w: 2.0, r: 255, g: 118, b: 16 },
+  { frac: 0.50, w: 1.1, r: 85, g: 0, b: 0 },
+  { frac: 0.56, w: 2.2, r: 248, g: 28, b: 4 },
+  { frac: 0.64, w: 1.3, r: 195, g: 4, b: 2 },
+  { frac: 0.71, w: 1.9, r: 252, g: 75, b: 10 },
+  { frac: 0.78, w: 1.2, r: 130, g: 0, b: 0 },
+  { frac: 0.85, w: 2.0, r: 244, g: 14, b: 4 },
+  { frac: 0.92, w: 1.4, r: 215, g: 38, b: 6 },
+  { frac: 0.96, w: 1.1, r: 170, g: 0, b: 0 },
 ];
 
 // Reusable HD 640x16 offscreen buffer for razor-sharp 2D spectral streak synthesis
@@ -75,11 +72,10 @@ function getOffscreenBuffer(): {
 }
 
 /**
- * Applies the responsive reference-to-viewport coordinate transform and the
- * Left-stem pivoted camera zoom so that `EMBLEM_LEFT` (856) maps to `state.leftStemTargetX`
- * and `CENTER_Y` (540) stays vertically centered.
+ * Applies the responsive reference-to-viewport coordinate transform and camera zoom
+ * so that the Z emblem's center (190, 150) maps to `(state.pipeCenterTargetX, 540)` in 1920x1080 space.
  */
-function applyEmblemCameraTransform(
+function applyZEmblemCameraTransform(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
@@ -90,14 +86,30 @@ function applyEmblemCameraTransform(
 
   ctx.translate(width * 0.5, height * 0.5);
   ctx.scale(baseScale, baseScale);
-  ctx.translate(state.leftStemTargetX - CENTER_X, 0);
-  ctx.scale(state.scaleX, state.scaleY);
-  ctx.translate(-EMBLEM_LEFT, -CENTER_Y);
+  ctx.translate(state.pipeCenterTargetX - CENTER_X, 0);
+  ctx.scale(state.scaleX * Z_BASE_SCALE, state.scaleY * Z_BASE_SCALE);
+  ctx.translate(-Z_CENTER_X, -Z_CENTER_Y);
+}
+
+function drawInterpolatedPolygon(
+  ctx: CanvasRenderingContext2D,
+  ptsA: [number, number][],
+  ptsB: [number, number][],
+  t: number
+): void {
+  ctx.beginPath();
+  for (let i = 0; i < ptsA.length; i++) {
+    const x = lerp(ptsA[i][0], ptsB[i][0], t);
+    const y = lerp(ptsA[i][1], ptsB[i][1], t);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
 }
 
 /**
- * Renders the 3D folded geometric ribbon emblem for Stages 1, 2, and 3
- * using crisp native-DPI vector geometry.
+ * Renders the Netflix-style 3D folded 'Z' ribbon intro and its morph into the center
+ * vertical pipe '|' (Stages 1, 2, and 3), followed by internal vertical streak splitting as it zooms.
  */
 function renderGeometricEmblem(
   ctx: CanvasRenderingContext2D,
@@ -110,190 +122,200 @@ function renderGeometricEmblem(
   ctx.save();
   ctx.globalAlpha = state.emblemOpacity;
 
-  applyEmblemCameraTransform(ctx, width, height, state);
+  applyZEmblemCameraTransform(ctx, width, height, state);
 
-  // Clip emblem with the signature concave bottom arch (and top edge)
-  ctx.beginPath();
-  ctx.moveTo(EMBLEM_LEFT - 20, EMBLEM_TOP);
-  ctx.lineTo(EMBLEM_RIGHT + 20, EMBLEM_TOP);
-  ctx.lineTo(EMBLEM_RIGHT + 20, EMBLEM_BOT + 4);
-  ctx.quadraticCurveTo(CENTER_X, EMBLEM_BOT - 9.5, EMBLEM_LEFT - 20, EMBLEM_BOT + 4);
-  ctx.closePath();
-  ctx.clip();
+  const m = state.morphToPipeProgress;
 
   // ---------------------------------------------------------------------------
-  // 1. RIGHT VERTICAL PILLAR (tucked behind the diagonal ribbon)
-  // Splits into crisp vertical red hairlines and retracts 100% downward into bottom-right (f=42.5..49.2)
+  // 1. TOP BAR OF 'Z' (#B1060F)
+  // Draws left -> right (110..270, y=40..80), morphs into top of pipe (170..210, y=40)
   // ---------------------------------------------------------------------------
-  if (state.rightPillarProgress > 0.001 && state.rightPillarDissolve < 0.999) {
-    const rLeft = EMBLEM_RIGHT - STEM_W; // 990
-    const rRight = EMBLEM_RIGHT; // 1062
-    const growTop = lerp(EMBLEM_BOT, EMBLEM_TOP, state.rightPillarProgress);
-    const dissolveTop = lerp(growTop, EMBLEM_BOT, state.rightPillarDissolve);
-    const rAlpha = clamp(1.0 - Math.pow(state.rightPillarDissolve, 1.6), 0, 1);
-
+  if (state.leftPillarProgress > 0.001 && m < 0.999) {
     ctx.save();
-    ctx.globalAlpha = state.emblemOpacity * rAlpha;
+    ctx.beginPath();
+    ctx.rect(110, 40, 160 * state.leftPillarProgress, 40);
+    ctx.clip();
 
-    const rightGrad = ctx.createLinearGradient(rLeft, 0, rRight, 0);
-    rightGrad.addColorStop(0, 'rgb(128, 0, 0)');
-    rightGrad.addColorStop(0.25, 'rgb(148, 0, 0)');
-    rightGrad.addColorStop(0.78, 'rgb(142, 0, 0)');
-    rightGrad.addColorStop(1, 'rgb(118, 0, 0)');
-    ctx.fillStyle = rightGrad;
-    ctx.fillRect(rLeft, dissolveTop, STEM_W, EMBLEM_BOT - dissolveTop);
-
-    // Crisp 3D cast shadow from the diagonal ribbon onto the lower portion of the right pillar
-    const rShadowGrad = ctx.createLinearGradient(
-      rLeft,
-      EMBLEM_BOT - 190,
-      rLeft + 32,
-      EMBLEM_BOT - 38
+    drawInterpolatedPolygon(
+      ctx,
+      [
+        [110, 40],
+        [270, 40],
+        [270, 80],
+        [110, 80],
+      ],
+      [
+        [170, 40],
+        [210, 40],
+        [210, 40],
+        [170, 40],
+      ],
+      m
     );
-    rShadowGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    rShadowGrad.addColorStop(0.65, 'rgba(0, 0, 0, 0.48)');
-    rShadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0.76)');
-    ctx.fillStyle = rShadowGrad;
-    ctx.fillRect(rLeft, dissolveTop, STEM_W, EMBLEM_BOT - dissolveTop);
 
-    // Crisp vertical vector hairlines as Right Pillar retracts downward (f=42.5..49)
-    if (state.internalStreakIntensity > 0.01) {
-      const sInt = state.internalStreakIntensity;
-      for (let i = 0; i < INTERNAL_RIBBON_STREAKS.length; i++) {
-        const st = INTERNAL_RIBBON_STREAKS[i];
-        const sx = rLeft + st.frac * STEM_W;
-        const tipOffset = (i % 3) * 18 * state.rightPillarDissolve;
-        const yStart = Math.max(EMBLEM_TOP, dissolveTop - tipOffset);
-        ctx.fillStyle = `rgba(0, 0, 0, ${0.88 * sInt})`;
-        ctx.fillRect(sx + st.w * 0.45, dissolveTop, 2.2, EMBLEM_BOT - dissolveTop);
-        ctx.fillStyle = `rgba(${st.r}, 0, 0, ${0.95 * sInt})`;
-        ctx.fillRect(sx - st.w * 0.45, yStart, st.w * 0.9, EMBLEM_BOT - yStart);
-      }
-    }
-
+    const topGrad = ctx.createLinearGradient(110, 40, 270, 40);
+    topGrad.addColorStop(0, '#9E050D');
+    topGrad.addColorStop(0.25, '#B1060F');
+    topGrad.addColorStop(0.75, '#B1060F');
+    topGrad.addColorStop(1, '#98050C');
+    ctx.fillStyle = topGrad;
+    ctx.fill();
     ctx.restore();
   }
 
   // ---------------------------------------------------------------------------
-  // 2. LEFT VERTICAL PILLAR ('|' line of the N that zooms to full height!)
+  // 2. BOTTOM BAR OF 'Z' (#B1060F)
+  // Draws left -> right (110..270, y=220..260), morphs into bottom of pipe (170..210, y=260)
   // ---------------------------------------------------------------------------
-  if (state.leftPillarProgress > 0.001) {
-    const lLeft = EMBLEM_LEFT; // 856
-    const lRight = EMBLEM_LEFT + STEM_W; // 928
-    const lTop = lerp(EMBLEM_BOT, EMBLEM_TOP, state.leftPillarProgress);
+  if (state.rightPillarProgress > 0.001 && m < 0.999) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(110, 220, 160 * state.rightPillarProgress, 40);
+    ctx.clip();
 
-    const leftGrad = ctx.createLinearGradient(lLeft, 0, lRight, 0);
-    leftGrad.addColorStop(0, 'rgb(126, 0, 0)');
-    leftGrad.addColorStop(0.22, 'rgb(146, 0, 0)');
-    leftGrad.addColorStop(0.76, 'rgb(142, 0, 0)');
-    leftGrad.addColorStop(1, 'rgb(116, 0, 0)');
-    ctx.fillStyle = leftGrad;
-    ctx.fillRect(lLeft, lTop, STEM_W, EMBLEM_BOT - lTop);
+    drawInterpolatedPolygon(
+      ctx,
+      [
+        [110, 220],
+        [270, 220],
+        [270, 260],
+        [110, 260],
+      ],
+      [
+        [170, 260],
+        [210, 260],
+        [210, 260],
+        [170, 260],
+      ],
+      m
+    );
 
-    // Top-fold 3D cast shadow underneath the diagonal ribbon's upper fold
-    if (state.diagonalRibbonProgress > 0.01) {
-      const shadowStrength =
-        clamp(state.diagonalRibbonProgress * 1.2, 0, 1) *
-        (1 - state.diagonalRetractProgress * 0.9);
-      if (shadowStrength > 0.01) {
-        const lShadowGrad = ctx.createLinearGradient(
-          lRight,
-          EMBLEM_TOP + 18,
-          lLeft,
-          EMBLEM_TOP + 180
-        );
-        lShadowGrad.addColorStop(0, `rgba(0, 0, 0, ${0.72 * shadowStrength})`);
-        lShadowGrad.addColorStop(0.55, `rgba(0, 0, 0, ${0.30 * shadowStrength})`);
-        lShadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = lShadowGrad;
-        ctx.fillRect(lLeft, lTop, STEM_W, EMBLEM_BOT - lTop);
-      }
-    }
-
-    // Stage 3: Razor-sharp vector red, scarlet, and warm-amber light streaks inside the zooming Left '|' Pillar
-    if (state.internalStreakIntensity > 0.01) {
-      const splitAlpha = state.internalStreakIntensity;
-      // Crisp dark background channels between vector filaments
-      ctx.fillStyle = `rgba(6, 0, 0, ${0.82 * splitAlpha})`;
-      ctx.fillRect(lLeft + 8, lTop, 2.0, EMBLEM_BOT - lTop);
-      ctx.fillRect(lLeft + 19, lTop, 2.4, EMBLEM_BOT - lTop);
-      ctx.fillRect(lLeft + 33, lTop, 2.2, EMBLEM_BOT - lTop);
-      ctx.fillRect(lLeft + 46, lTop, 2.5, EMBLEM_BOT - lTop);
-      ctx.fillRect(lLeft + 60, lTop, 2.0, EMBLEM_BOT - lTop);
-
-      for (const st of INTERNAL_RIBBON_STREAKS) {
-        const sx = lLeft + st.frac * STEM_W;
-        ctx.fillStyle = `rgba(${st.r}, ${st.g}, ${st.b}, ${0.98 * splitAlpha})`;
-        ctx.fillRect(sx - st.w * 0.45, lTop, st.w * 0.9, EMBLEM_BOT - lTop);
-      }
-    }
+    const botGrad = ctx.createLinearGradient(110, 220, 270, 220);
+    botGrad.addColorStop(0, '#98050C');
+    botGrad.addColorStop(0.25, '#B1060F');
+    botGrad.addColorStop(0.75, '#B1060F');
+    botGrad.addColorStop(1, '#9E050D');
+    ctx.fillStyle = botGrad;
+    ctx.fill();
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------------------
-  // 3. CENTER FOLDED DIAGONAL RIBBON
-  // Splits into crisp DIAGONAL vector streaks parallel to '\' and retracts upward into the Left '|' stem
+  // 3. TOP & BOTTOM 3D CAST SHADOW TRIANGLES (#7A0509)
   // ---------------------------------------------------------------------------
-  const diagActiveProg = clamp(
-    state.diagonalRibbonProgress - state.diagonalRetractProgress,
-    0,
-    1
-  );
-  if (diagActiveProg > 0.001) {
-    const topL = EMBLEM_LEFT; // 856
-    const topR = EMBLEM_LEFT + STEM_W; // 928
-    const fullBotL = EMBLEM_RIGHT - STEM_W; // 990
-    const fullBotR = EMBLEM_RIGHT; // 1062
+  if (state.shadowOpacity > 0.001 && m < 0.995) {
+    ctx.save();
+    ctx.globalAlpha = state.emblemOpacity * state.shadowOpacity * (1 - m * 0.65);
+    ctx.fillStyle = '#7A0509';
 
-    const botL = lerp(topL, fullBotL, diagActiveProg);
-    const botR = lerp(topR, fullBotR, diagActiveProg);
-    const curBotY = lerp(EMBLEM_TOP, EMBLEM_BOT, diagActiveProg);
+    // Top shadow triangle: 230,40 203,80 175,80 -> 190,40
+    drawInterpolatedPolygon(
+      ctx,
+      [
+        [230, 40],
+        [203, 80],
+        [175, 80],
+      ],
+      [
+        [190, 40],
+        [190, 40],
+        [190, 40],
+      ],
+      m
+    );
+    ctx.fill();
 
+    // Bottom shadow triangle: 177,220 150,260 205,260 -> 190,260
+    drawInterpolatedPolygon(
+      ctx,
+      [
+        [177, 220],
+        [150, 260],
+        [205, 260],
+      ],
+      [
+        [190, 260],
+        [190, 260],
+        [190, 260],
+      ],
+      m
+    );
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4. CENTER DIAGONAL RIBBON OF 'Z' (#E50914) -> MORPHS INTO VERTICAL PIPE '|' (170..210, 40..260)
+  // ---------------------------------------------------------------------------
+  if (state.diagonalRibbonProgress > 0.001) {
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(topL, EMBLEM_TOP);
-    ctx.lineTo(topR, EMBLEM_TOP);
-    ctx.lineTo(botR, curBotY);
-    ctx.lineTo(botL, curBotY);
-    ctx.closePath();
+    ctx.rect(100, 40, 190, 220 * state.diagonalRibbonProgress);
     ctx.clip();
 
-    const diagGrad = ctx.createLinearGradient(topL, EMBLEM_TOP, botR, curBotY);
-    diagGrad.addColorStop(0, 'rgb(238, 0, 0)');
-    diagGrad.addColorStop(0.45, 'rgb(244, 4, 4)');
-    diagGrad.addColorStop(0.55, 'rgb(248, 10, 8)');
-    diagGrad.addColorStop(1, 'rgb(238, 0, 0)');
-    ctx.fillStyle = diagGrad;
-    ctx.fillRect(
-      EMBLEM_LEFT,
-      EMBLEM_TOP,
-      EMBLEM_RIGHT - EMBLEM_LEFT,
-      EMBLEM_BOT - EMBLEM_TOP
+    drawInterpolatedPolygon(
+      ctx,
+      [
+        [230, 40],
+        [270, 40],
+        [270, 80],
+        [150, 260],
+        [110, 260],
+        [110, 220],
+      ],
+      [
+        [170, 40],
+        [210, 40],
+        [210, 40],
+        [210, 260],
+        [170, 260],
+        [170, 260],
+      ],
+      m
     );
 
-    // Stage 3: Crisp diagonal vector streak lines parallel to the '\' ribbon
-    if (state.internalStreakIntensity > 0.01) {
-      const sAlpha = state.internalStreakIntensity;
-      for (let i = 0; i < INTERNAL_RIBBON_STREAKS.length; i++) {
-        const st = INTERNAL_RIBBON_STREAKS[i];
-        const xTop = topL + st.frac * STEM_W;
-        const xBot = botL + st.frac * STEM_W;
+    const diagGrad = ctx.createLinearGradient(250, 40, 130, 260);
+    diagGrad.addColorStop(0, '#EE0914');
+    diagGrad.addColorStop(0.5, '#E50914');
+    diagGrad.addColorStop(1, '#DC0812');
+    ctx.fillStyle = diagGrad;
+    ctx.fill();
 
+    // Stage 3: Clip inside the morphing ribbon/pipe and draw razor-sharp red/scarlet/amber light filaments!
+    if (state.internalStreakIntensity > 0.01) {
+      ctx.clip();
+      const sAlpha = state.internalStreakIntensity;
+      const topLeftX = lerp(230, 170, m);
+      const botLeftX = lerp(110, 170, m);
+      const ribbonW = 40;
+
+      // Crisp dark separation grooves inside the morphing pipe
+      const darkGrooves = [0.14, 0.31, 0.48, 0.66, 0.83];
+      for (const gf of darkGrooves) {
+        const xt = topLeftX + gf * ribbonW;
+        const xb = botLeftX + gf * ribbonW;
         ctx.beginPath();
-        ctx.moveTo(xTop - st.w * 0.4, EMBLEM_TOP);
-        ctx.lineTo(xTop + st.w * 0.4, EMBLEM_TOP);
-        ctx.lineTo(xBot + st.w * 0.4, curBotY);
-        ctx.lineTo(xBot - st.w * 0.4, curBotY);
+        ctx.moveTo(xt - 0.7, 40);
+        ctx.lineTo(xt + 0.7, 40);
+        ctx.lineTo(xb + 0.7, 260);
+        ctx.lineTo(xb - 0.7, 260);
         ctx.closePath();
         ctx.fillStyle = `rgba(8, 0, 0, ${0.84 * sAlpha})`;
         ctx.fill();
+      }
 
+      // Luminous red, scarlet, and warm-amber filaments inside the zooming pipe '|'
+      for (const st of INTERNAL_RIBBON_STREAKS) {
+        const xt = topLeftX + st.frac * ribbonW;
+        const xb = botLeftX + st.frac * ribbonW;
+        const hw = st.w * 0.45;
         ctx.beginPath();
-        ctx.moveTo(xTop + st.w * 0.4, EMBLEM_TOP);
-        ctx.lineTo(xTop + st.w * 1.15, EMBLEM_TOP);
-        ctx.lineTo(xBot + st.w * 1.15, curBotY);
-        ctx.lineTo(xBot + st.w * 0.4, curBotY);
+        ctx.moveTo(xt - hw, 40);
+        ctx.lineTo(xt + hw, 40);
+        ctx.lineTo(xb + hw, 260);
+        ctx.lineTo(xb - hw, 260);
         ctx.closePath();
-        ctx.fillStyle = `rgba(${st.r}, ${st.g}, ${st.b}, ${0.95 * sAlpha})`;
+        ctx.fillStyle = `rgba(${st.r}, ${st.g}, ${st.b}, ${0.96 * sAlpha})`;
         ctx.fill();
       }
     }
@@ -322,20 +344,12 @@ function renderVolumetricLightStreaks(
   ctx.save();
   ctx.globalAlpha = state.streakFieldOpacity;
 
+  // Before f=58.0, clip the volumetric streaks to the zooming vertical pipe's bounds (170..210, 40..260)
   if (state.frame < 58.0) {
     ctx.save();
-    applyEmblemCameraTransform(ctx, width, height, state);
+    applyZEmblemCameraTransform(ctx, width, height, state);
     ctx.beginPath();
-    ctx.moveTo(EMBLEM_LEFT - 4, EMBLEM_TOP);
-    ctx.lineTo(EMBLEM_LEFT + STEM_W + 8, EMBLEM_TOP);
-    ctx.lineTo(EMBLEM_LEFT + STEM_W + 8, EMBLEM_BOT + 4);
-    ctx.quadraticCurveTo(
-      CENTER_X,
-      EMBLEM_BOT - 9.5,
-      EMBLEM_LEFT - 4,
-      EMBLEM_BOT + 4
-    );
-    ctx.closePath();
+    ctx.rect(168, 40, 44, 220);
     ctx.restore();
     ctx.clip();
   }
@@ -421,12 +435,12 @@ export function renderAnimationFrame(
     return state;
   }
 
-  // Render 3D Folded Geometric Ribbon Emblem (Stages 1, 2, 3)
+  // Render 3D Folded 'Z' Geometric Ribbon Emblem & Pipe Morph (Stages 1, 2, 3)
   if (state.emblemOpacity > 0.001) {
     renderGeometricEmblem(ctx, width, height, state);
   }
 
-  // Render HD 640-Emitter Volumetric Light Streak Field
+  // Render HD 640-Emitter Volumetric Light Streak Field (Stages 3, 4, 5)
   if (state.streakFieldOpacity > 0.001) {
     renderVolumetricLightStreaks(ctx, width, height, state);
   }

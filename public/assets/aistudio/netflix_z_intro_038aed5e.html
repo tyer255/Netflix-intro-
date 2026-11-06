@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Netflix style Z intro and close</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #000; }
+  body { display: flex; align-items: center; justify-content: center; }
+  svg { width: min(90vw, 480px); height: auto; }
+</style>
+</head>
+<body>
+<!--
+  Total loop = 3.6s
+  0.20 - 1.25s : intro (Z ribbon draw-in: top bar, diagonal, bottom bar)
+  1.10 - 1.40s : shadows fade in
+  1.40 - 2.20s : hold
+  2.20 - 3.00s : close (Z morphs into pipe)
+  3.30 - 3.60s : fade out, then loop
+-->
+<svg viewBox="0 0 380 300" role="img" aria-label="Netflix style Z intro and close">
+  <defs>
+    <clipPath id="clipTop"><rect x="110" y="40" width="0" height="40">
+      <animate attributeName="width" dur="3.6s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.0556;0.1389;1" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1" values="0;0;160;160"/>
+    </rect></clipPath>
+    <clipPath id="clipDiag"><rect x="100" y="40" width="190" height="0">
+      <animate attributeName="height" dur="3.6s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.125;0.2639;1" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1" values="0;0;220;220"/>
+    </rect></clipPath>
+    <clipPath id="clipBot"><rect x="110" y="220" width="0" height="40">
+      <animate attributeName="width" dur="3.6s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.25;0.3472;1" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1" values="0;0;160;160"/>
+    </rect></clipPath>
+  </defs>
+
+  <g>
+    <animate attributeName="opacity" dur="3.6s" repeatCount="indefinite"
+      keyTimes="0;0.9167;1" values="1;1;0"/>
+
+    <polygon fill="#B1060F" clip-path="url(#clipTop)" points="110,40 270,40 270,80 110,80">
+      <animate attributeName="points" dur="3.6s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.6111;0.8333;1" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1"
+        values="110,40 270,40 270,80 110,80;110,40 270,40 270,80 110,80;170,40 210,40 210,40 170,40;170,40 210,40 210,40 170,40"/>
+    </polygon>
+
+    <polygon fill="#B1060F" clip-path="url(#clipBot)" points="110,220 270,220 270,260 110,260">
+      <animate attributeName="points" dur="3.6s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.6111;0.8333;1" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1"
+        values="110,220 270,220 270,260 110,260;110,220 270,220 270,260 110,260;170,260 210,260 210,260 170,260;170,260 210,260 210,260 170,260"/>
+    </polygon>
+
+    <polygon fill="#7A0509" opacity="0" points="230,40 203,80 175,80">
+      <animate attributeName="opacity" dur="3.6s" repeatCount="indefinite"
+        keyTimes="0;0.3056;0.3889;1" values="0;0;1;1"/>
+      <animate attributeName="points" dur="3.6s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.6111;0.8333;1" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1"
+        values="230,40 203,80 175,80;230,40 203,80 175,80;190,40 190,40 190,40;190,40 190,40 190,40"/>
+    </polygon>
+
+    <polygon fill="#7A0509" opacity="0" points="177,220 150,260 205,260">
+      <animate attributeName="opacity" dur="3.6s" repeatCount="indefinite"
+        keyTimes="0;0.3056;0.3889;1" values="0;0;1;1"/>
+      <animate attributeName="points" dur="3.6s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.6111;0.8333;1" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1"
+        values="177,220 150,260 205,260;177,220 150,260 205,260;190,260 190,260 190,260;190,260 190,260 190,260"/>
+    </polygon>
+
+    <polygon fill="#E50914" clip-path="url(#clipDiag)" points="230,40 270,40 270,80 150,260 110,260 110,220">
+      <animate attributeName="points" dur="3.6s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.6111;0.8333;1" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1"
+        values="230,40 270,40 270,80 150,260 110,260 110,220;230,40 270,40 270,80 150,260 110,260 110,220;170,40 210,40 210,40 210,260 170,260 170,260;170,40 210,40 210,40 210,260 170,260 170,260"/>
+    </polygon>
+  </g>
+</svg>
+</body>
+</html>

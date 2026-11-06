@@ -7,7 +7,7 @@ import { AnimationStageCanvas } from './components/AnimationStageCanvas';
 
 export default function App() {
   return (
-    <main className="relative w-screen h-screen bg-black overflow-hidden m-0 p-0">
+    <main className="relative w-screen h-screen bg-black overflow-hidden m-0 p-0 select-none">
       <AnimationStageCanvas />
     </main>
   );

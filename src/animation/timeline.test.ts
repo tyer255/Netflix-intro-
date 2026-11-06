@@ -12,8 +12,8 @@ import {
 
 test('Stage classification matches frame boundaries across all 96 frames', () => {
   assert.equal(getStageAtFrame(0), 'initial-appearance');
-  assert.equal(getStageAtFrame(13), 'initial-appearance');
-  assert.equal(getStageAtFrame(14), 'geometric-hold');
+  assert.equal(getStageAtFrame(14), 'initial-appearance');
+  assert.equal(getStageAtFrame(15), 'geometric-hold');
   assert.equal(getStageAtFrame(25), 'geometric-hold');
   assert.equal(getStageAtFrame(42), 'streak-transformation');
   assert.equal(getStageAtFrame(58), 'streak-transformation');
@@ -23,58 +23,55 @@ test('Stage classification matches frame boundaries across all 96 frames', () =>
   assert.equal(getStageAtFrame(95), 'final-composition');
 });
 
-test('Stage 1 ribbon sequential growth: left pillar -> diagonal ribbon -> right pillar', () => {
+test('Stage 1 Z ribbon sequential growth: top bar -> diagonal ribbon -> bottom bar -> shadows', () => {
   const f0 = evaluateTimeline(0 / ANIMATION_FPS);
   assert.equal(f0.isBlackFrame, true);
   assert.equal(f0.leftPillarProgress, 0);
 
   const f2 = evaluateTimeline(2 / ANIMATION_FPS);
   assert.equal(f2.isBlackFrame, false);
-  assert.ok(f2.leftPillarProgress > 0.3 && f2.leftPillarProgress < 0.95);
+  assert.ok(f2.leftPillarProgress > 0.3 && f2.leftPillarProgress < 0.99);
   assert.equal(f2.diagonalRibbonProgress, 0);
   assert.equal(f2.rightPillarProgress, 0);
 
-  const f4 = evaluateTimeline(4 / ANIMATION_FPS);
-  assert.equal(f4.leftPillarProgress, 1);
-  assert.equal(f4.diagonalRibbonProgress, 0);
-
   const f6 = evaluateTimeline(6 / ANIMATION_FPS);
   assert.equal(f6.leftPillarProgress, 1);
-  assert.ok(f6.diagonalRibbonProgress > 0.4 && f6.diagonalRibbonProgress < 0.99);
+  assert.ok(f6.diagonalRibbonProgress > 0.3 && f6.diagonalRibbonProgress < 0.99);
   assert.equal(f6.rightPillarProgress, 0);
 
-  const f8 = evaluateTimeline(8 / ANIMATION_FPS);
-  assert.equal(f8.diagonalRibbonProgress, 1);
-  assert.ok(f8.rightPillarProgress > 0 && f8.rightPillarProgress < 0.6);
+  const f11 = evaluateTimeline(11 / ANIMATION_FPS);
+  assert.equal(f11.diagonalRibbonProgress, 1);
+  assert.ok(f11.rightPillarProgress > 0.3 && f11.rightPillarProgress < 0.99);
 
-  const f14 = evaluateTimeline(14 / ANIMATION_FPS);
-  assert.equal(f14.leftPillarProgress, 1);
-  assert.equal(f14.diagonalRibbonProgress, 1);
-  assert.equal(f14.rightPillarProgress, 1);
+  const f16 = evaluateTimeline(16 / ANIMATION_FPS);
+  assert.equal(f16.leftPillarProgress, 1);
+  assert.equal(f16.diagonalRibbonProgress, 1);
+  assert.equal(f16.rightPillarProgress, 1);
+  assert.equal(f16.shadowOpacity, 1);
 });
 
-test('Stage 2 & 3 uniform camera zoom onto Left stem and retraction curves', () => {
+test('Stage 2 & 3 Z-to-pipe morph and uniform camera zoom curves', () => {
   const f20 = evaluateTimeline(20 / ANIMATION_FPS);
   const f35 = evaluateTimeline(35 / ANIMATION_FPS);
-  const f42 = evaluateTimeline(42 / ANIMATION_FPS);
+  const f45 = evaluateTimeline(45 / ANIMATION_FPS);
   const f55 = evaluateTimeline(55 / ANIMATION_FPS);
   const f58 = evaluateTimeline(58 / ANIMATION_FPS);
 
   assert.equal(f20.scaleX, 1.0);
   assert.equal(f20.scaleY, 1.0);
-  assert.equal(f20.leftStemTargetX, 856);
-  assert.ok(f35.scaleX > 1.05 && f35.scaleX < f42.scaleX);
-  assert.ok(Math.abs(f42.scaleX - 1.236) < 0.01);
-  assert.equal(f42.leftStemTargetX, 838);
+  assert.equal(f20.morphToPipeProgress, 0);
+  assert.ok(f35.scaleX > 1.05);
 
-  // By f=55, both Right pillar and Diagonal ribbon have completely retracted into the Left '|' stem
-  assert.equal(f55.rightPillarDissolve, 1);
-  assert.equal(f55.diagonalRetractProgress, 1);
+  // At f=45, Z is actively morphing into the center vertical pipe '|'
+  assert.ok(f45.morphToPipeProgress > 0.2 && f45.morphToPipeProgress < 0.9);
 
-  // By f=58, Left '|' stem has zoomed uniformly to full height (scaleY = scaleX = 2.92, leftStemTargetX = 782)
+  // By f=55, Z has completely morphed into the vertical pipe '|'
+  assert.equal(f55.morphToPipeProgress, 1);
+
+  // By f=58, the pipe has zoomed uniformly to full screen height (scaleY = scaleX = 2.92)
   assert.equal(f58.scaleX, f58.scaleY);
   assert.ok(f58.scaleY > 2.9);
-  assert.equal(f58.leftStemTargetX, 782);
+  assert.equal(f58.pipeCenterTargetX, 886);
 });
 
 test('Stage 4 & 5 volumetric streak emitters produce multicolored spectrum and final red hero streak', () => {

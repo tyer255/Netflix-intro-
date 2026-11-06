@@ -15,15 +15,24 @@ export interface TimelineState {
   frame: number;
   stage: AnimationStage;
   isBlackFrame: boolean;
-  // Stage 1: Ribbon draw-in (0..1)
+  // Stage 1: Z Ribbon draw-in (0..1)
+  /** Top horizontal bar of Z (left -> right) */
   leftPillarProgress: number;
+  /** Center diagonal ribbon of Z (top-right -> bottom-left) */
   diagonalRibbonProgress: number;
+  /** Bottom horizontal bar of Z (left -> right) */
   rightPillarProgress: number;
-  // Stage 2 & 3: Uniform camera zoom onto the Left '|' stem
+  /** 3D fold cast shadows under top and bottom diagonal junctions (0..1) */
+  shadowOpacity: number;
+  // Stage 2 & 3: Uniform camera zoom & Z -> '|' pipe morph
   scaleX: number;
   scaleY: number;
-  /** Target left-edge X of the Left '|' stem in 1920x1080 reference space */
+  /** Target horizontal center X of the Z / pipe in 1920x1080 reference space */
+  pipeCenterTargetX: number;
+  /** Target left-edge X of the zoomed pipe in 1920x1080 reference space */
   leftStemTargetX: number;
+  /** Progress of Z morphing into the center vertical pipe '|' (0..1) */
+  morphToPipeProgress: number;
   // Stage 3: Emblem transformation into streaks (0..1)
   internalStreakIntensity: number;
   rightPillarDissolve: number;
@@ -64,14 +73,19 @@ export function easeInCubic(t: number): number {
   return u * u * u;
 }
 
+export function easeInOutCubic(t: number): number {
+  const u = clamp(t, 0, 1);
+  return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+}
+
 export function easeInPow(t: number, p: number): number {
   const u = clamp(t, 0, 1);
   return Math.pow(u, p);
 }
 
 export function getStageAtFrame(frame: number): AnimationStage {
-  if (frame < 14) return 'initial-appearance';
-  if (frame < 42) return 'geometric-hold';
+  if (frame < 15) return 'initial-appearance';
+  if (frame < 40) return 'geometric-hold';
   if (frame < 61) return 'streak-transformation';
   if (frame < 75) return 'multicolored-expansion';
   return 'final-composition';
@@ -79,8 +93,8 @@ export function getStageAtFrame(frame: number): AnimationStage {
 
 /**
  * Evaluates the deterministic frame-by-frame animation state for any timestamp `time` in seconds.
- * Calibrated directly against the 96-frame (24fps) reference video progression, including the
- * exact uniform camera zoom pivoted onto the Left '|' vertical stem during frames 42..58.
+ * Combines the Netflix-style Z ribbon draw-in and Z -> '|' pipe morph with the full-height
+ * zoom and 640-emitter HD multicolored light streak expansion.
  */
 export function evaluateTimeline(timeSeconds: number): TimelineState {
   const clampedTime = clamp(timeSeconds, 0, ANIMATION_DURATION);
@@ -90,55 +104,56 @@ export function evaluateTimeline(timeSeconds: number): TimelineState {
   // Frame 0 (f < 0.65) and Frame 95+ (f >= 94.85) are pure black
   const isBlackFrame = frame < 0.65 || frame >= 94.85;
 
-  // Stage 1:
-  // f=1..4: Left vertical pillar grows upward from bottom (y=726 -> y=352)
+  // Stage 1: Z Ribbon sequential draw-in (matching netflix_z_intro_038aed5e.html)
+  // 1) Top horizontal bar draws left -> right (f=0.65..4.5)
   const leftPillarProgress =
-    frame < 0.65 ? 0 : easeOutCubic(invLerp(0.65, 4.0, frame));
+    frame < 0.65 ? 0 : easeOutCubic(invLerp(0.65, 4.5, frame));
 
-  // f=4..8: Center folded diagonal ribbon unfolds from top-left to bottom-right
+  // 2) Diagonal ribbon draws top-right -> bottom-left (f=4.0..9.2)
   const diagonalRibbonProgress =
-    frame < 4.0 ? 0 : easeOutCubic(invLerp(4.0, 8.0, frame));
+    frame < 4.0 ? 0 : easeOutCubic(invLerp(4.0, 9.2, frame));
 
-  // f=7.2..14: Right vertical pillar grows upward from bottom-right behind the diagonal fold
+  // 3) Bottom horizontal bar draws left -> right (f=8.5..14.0)
   const rightPillarProgress =
-    frame < 7.2 ? 0 : easeOutCubic(invLerp(7.2, 13.8, frame));
+    frame < 8.5 ? 0 : easeOutCubic(invLerp(8.5, 14.0, frame));
 
-  // Stage 2 & 3: Camera zoom pivoted onto the Left '|' vertical stem
-  // At f<=20: scale = 1.000, leftStemTargetX = 856 (w=72, h=374)
-  // At f=42:  scale = 1.236, leftStemTargetX = 838 (w=89, h=462, topY=309, botY=771)
-  // At f=58:  scale = 2.920, leftStemTargetX = 782 (w=210 -> x=[782..992], h=1092 -> y=[0..1080])
+  // 4) 3D fold shadows fade in (f=10.5..15.5)
+  const shadowOpacity = smoothstep(10.5, 15.5, frame);
+
+  // Stage 2 & 3: Z morphs into vertical pipe '|' (f=39.0..51.5) & zooms to full screen height (f=20..58)
+  const morphToPipeProgress = easeInOutCubic(invLerp(39.0, 51.5, frame));
+
   let scale = 1.0;
-  let leftStemTargetX = 856;
+  let pipeCenterTargetX = 960;
 
   if (frame > 20 && frame <= 42) {
     const u = invLerp(20, 42, frame);
     const ease = easeInPow(u, 2.15);
     scale = 1.0 + 0.236 * ease;
-    leftStemTargetX = lerp(856, 838, ease);
+    pipeCenterTargetX = lerp(960, 935, ease);
   } else if (frame > 42) {
     const u = invLerp(42, 58, frame);
     scale = 1.236 + (2.92 - 1.236) * easeInPow(u, 2.15);
-    leftStemTargetX = lerp(838, 782, easeInPow(u, 1.55));
+    // Align the zoomed vertical pipe center with the streak burst column center (886)
+    pipeCenterTargetX = lerp(935, 886, easeInPow(u, 1.45));
   }
 
   const scaleX = scale;
   const scaleY = scale;
+  // Pipe width in 1920x1080 space is 68 * scale; compute left edge for streak alignment
+  const leftStemTargetX = Math.round(pipeCenterTargetX - 34 * scale);
 
-  // Stage 3: Transformation into vertical red light streaks
-  // Internal streaks appear inside the emblem starting at f=42
-  const internalStreakIntensity = smoothstep(41.5, 50.0, frame);
+  // Stage 3: Internal vertical red/scarlet/amber streaks appear as Z morphs into the vertical pipe '|'
+  const internalStreakIntensity = smoothstep(42.5, 51.5, frame);
 
-  // Right '|' pillar splits into vertical red hairlines and retracts 100% downward into the bottom-right corner over f=42.5..49.2
-  const rightPillarDissolve = easeInPow(invLerp(42.5, 49.2, frame), 1.35);
+  const rightPillarDissolve = morphToPipeProgress;
+  const diagonalRetractProgress = morphToPipeProgress;
 
-  // Diagonal '\' ribbon splits into diagonal streaks and retracts/zips upward into the top of the Left '|' stem over f=48.0..54.5
-  const diagonalRetractProgress = easeInPow(invLerp(48.0, 54.5, frame), 1.4);
-
-  // Emblem geometry stays 100% pure crisp vector through f=57, crossfading cleanly at f=56.5..58.5
+  // Emblem/pipe stays 100% pure crisp vector through f=57, crossfading cleanly at f=56.5..58.5
   const emblemOpacity =
     frame < 0.65 ? 0 : 1.0 - smoothstep(56.5, 58.5, frame);
 
-  // HD 640-emitter streak synthesizer fades in cleanly at f=56.0..58.2 just as Left '|' stem hits full screen height
+  // HD 640-emitter streak synthesizer fades in cleanly at f=55.8..58.2 just as the pipe hits full screen height
   let streakFieldOpacity = 0;
   if (frame >= 55.8 && frame < 94.85) {
     streakFieldOpacity = smoothstep(55.8, 58.2, frame);
@@ -158,9 +173,12 @@ export function evaluateTimeline(timeSeconds: number): TimelineState {
     leftPillarProgress,
     diagonalRibbonProgress,
     rightPillarProgress,
+    shadowOpacity,
     scaleX,
     scaleY,
+    pipeCenterTargetX,
     leftStemTargetX,
+    morphToPipeProgress,
     internalStreakIntensity,
     rightPillarDissolve,
     diagonalRetractProgress,
